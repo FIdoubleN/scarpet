@@ -1,0 +1,30 @@
+{
+  "categories": [
+    "Stone Items",
+    "Wood Items",
+    "Redstone Items"
+  ],
+  "colors": [
+    "gray",
+    "brown",
+    "red"
+  ],
+  "items": [
+    [
+      "cobblestone",
+      "stone",
+      "granite"
+    ],
+    [
+      "oak_planks",
+      "spruce_planks",
+      "birch_planks",
+      "dark_oak_planks"
+    ],
+    [
+      "redstone",
+      "redstone_torch",
+      "redstone_block"
+    ]
+  ]
+}
