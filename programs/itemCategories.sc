@@ -43,7 +43,7 @@ help() -> (
     texts = [
         'fs ' + ' ' * 80, ' \n',
         '#1ECB74b Item Categories', ' \n\n',
-        '#26DE81 /app_name import <sourceFile> [<container>] [<shulkerFillLevel>] [<itemCount>] ', 'f ｜ ', 'g ' +
+        '#26DE81 /app_name import <sourceFile> [<container>] [<shulkerFillLevel>] [<itemCount>] [<proportionalStackSize>] ', 'f ｜ ', 'g ' +
         'Imports item categories from JSON file, file has to contain at least the "items" object.', ' \n',
         '#26DE81 /app_name export <destinationFile> <from_pos> <to_pos>', 'f ｜ ', 'g ' +
         'Exports categories to file, categories are read from 1x1 row of shulker boxes, box color changes indicate new categories.', ' \n',
