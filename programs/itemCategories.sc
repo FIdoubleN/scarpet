@@ -3,16 +3,17 @@
 
 global_quote = '\'';
 global_path = 'categories/';
-global_containers = ['shulker_box', 'chest', 'trapped_chest'];
+global_containers = ['shulker_box', 'chest', 'trapped_chest', 'barrel'];
 
 __config() -> {
   'commands' -> {
     'help' -> 'help',
 
-    'import <sourceFile>' -> ['importCategories', 'shulker_box', 27, 1],
-    'import <sourceFile> <container>' -> ['importCategories', 27, 1],
-    'import <sourceFile> <container> <shulkerFillLevel>' -> ['importCategories', 1],
-    'import <sourceFile> <container> <shulkerFillLevel> <itemCount>' -> 'importCategories',
+    'import <sourceFile>' -> ['importCategories', 'shulker_box', 27, 1, false],
+    'import <sourceFile> <container>' -> ['importCategories', 27, 1, false],
+    'import <sourceFile> <container> <shulkerFillLevel>' -> ['importCategories', 1, false],
+    'import <sourceFile> <container> <shulkerFillLevel> <itemCount>' -> ['importCategories', false],
+    'import <sourceFile> <container> <shulkerFillLevel> <itemCount> <proportionalStackSize>' -> 'importCategories',
 
     'export <destinationFile> <from_pos> <to_pos>' -> 'exportCategories',
 
@@ -26,6 +27,7 @@ __config() -> {
     'container' -> {'type' -> 'term', 'suggest' -> global_containers},
     'shulkerFillLevel' -> {'type' -> 'int', 'min' -> 1, 'max' -> 27, 'suggest' -> [27]},
     'itemCount' -> {'type' -> 'int', 'min' -> 1, 'max' -> 64, 'suggest' -> [1]},
+    'proportionalStackSize' -> {'type' -> 'bool'},
 
     'destinationFile' -> {'type' -> 'string', 'suggest' -> ['myCategories']},
     'from_pos' -> {'type' -> 'pos', 'loaded' -> true},
@@ -41,7 +43,7 @@ help() -> (
     texts = [
         'fs ' + ' ' * 80, ' \n',
         '#1ECB74b Item Categories', ' \n\n',
-        '#26DE81 /app_name import <sourceFile> [<shulkerFillLevel>] [<itemCount>] ', 'f ｜ ', 'g ' +
+        '#26DE81 /app_name import <sourceFile> [<container>] [<shulkerFillLevel>] [<itemCount>] ', 'f ｜ ', 'g ' +
         'Imports item categories from JSON file, file has to contain at least the "items" object.', ' \n',
         '#26DE81 /app_name export <destinationFile> <from_pos> <to_pos>', 'f ｜ ', 'g ' +
         'Exports categories to file, categories are read from 1x1 row of shulker boxes, box color changes indicate new categories.', ' \n',
@@ -90,9 +92,25 @@ _getBoxAtPos(pos) -> (
 //@return color of box, null if block is not shulker box, empty string if box is not colored
 _getBoxColor(pos) -> (
     block = block(pos);
-    if (replace_first(block, '.*_shulker_box') == '',
+    if(replace_first(block, '.*_shulker_box') == '',
         return(replace(block, '_shulker_box')),
-        if(block = 'shulker_box', return(''), return(null))
+        if(block == 'shulker_box', return(''), return(null))
+    );
+);
+
+//Get name of shulker box at position
+//
+//@param pos position of box
+//@return name of box, null if box was not renamed (i.e. nbt data does not contain name)
+_getBoxName(pos) -> (
+    //Remove all nbt data except box names
+    before = '\\{CustomName:' + global_quote + '\\{"text":"';
+    after = '"}' + global_quote + ',Items:.*';
+    nbt = block_data(pos);
+    replaceBefore = replace(nbt, before);
+    if(replaceBefore == nbt,
+        return(null),
+        return(replace(replaceBefore, after))
     );
 );
 
@@ -115,7 +133,10 @@ _getBoxColor(pos) -> (
 //  category exceed fill level, the category items are split into the according
 //  number of shulker boxes. Numbers are added to category/box names in this case.
 //@param itemCount number of items per slot (i.e. stack size)
-importCategories(file, container, fillLevel, itemCount) -> (
+//@param proportionalStackSize if true, 16 stackables get same relative stack size as 64 stackables,
+//  so if itemCount is 32, 16 stackables will get 8 (so 16 * 32 / 64) items. Useful if output signal strength matters.
+//  If false, 16 stackables always get 16 items if itemCount is higher than 16.
+importCategories(file, container, fillLevel, itemCount, proportionalStackSize) -> (
   input = try(read_file(global_path + file, 'shared_json'), 'exception', _error('Error while reading file'));
   cNames = get(input, 'categories');
   cItems = get(input, 'items');
@@ -135,41 +156,31 @@ importCategories(file, container, fillLevel, itemCount) -> (
     );
     boxTitle = if(get(cNames, n), get(cNames, n), 'Category ' + (n+1));
 
-    if()
-
     //Fill apporpirate amount of boxes based on desired fill level
     c_for(i = 0, i * fillLevel < numItems, i+=1,
       boxItems = slice(thisCategory, i * fillLevel, min((i + 1) * fillLevel, numItems));
-      boxContent = map(boxItems, {'id' -> _, 'Count' -> itemCount, 'Slot' -> _i});
+      boxContent = map(boxItems, {
+        'id' -> _,
+        'Count' -> if(proportionalStackSize,
+            ceil(stack_limit(_) * itemCount / 64), //16 stackables get same relative item count as 64 stackables
+            min(stack_limit(_), itemCount)), //16 stackables get 16 items if itemCount is higher than 16
+        'Slot' -> _i});
 
       //Summon shulker box at player position
-      //Box title, numbered if not first box in category
       numBoxTitle = if(i == 0, boxTitle, boxTitle + ' ' + (i+1));
-      cmd = 'summon item ~ ~ ~ {Item:{' +
-        'id:' + boxID + ',' +
-            'Count:1,' +
-                'tag:{' +
-                    'BlockEntityTag:{Items:' + boxContent + '},' +
-                    'display:{Name:' + global_quote + '{"text":"' + numBoxTitle + '"}' + global_quote + '}' +
-                '}' +
-            '},' +
-            'PickupDelay:6' + //Prevents player from picking up boxes before they fall down
-        '}';
-        run(cmd);
-        ////Can't figure out how to change box name using the spawn command :(
-        // spawn('item', pos(player()), {
-        //   'Item' -> {
-        //     'id' -> boxID,
-        //     'Count' -> 1,
-        //     'tag' -> {
-        //       'BlockEntityTag' -> {'Items' -> boxContent},
-        //       'display' -> {'Name' -> {'text' -> numBoxTitle}}  //Not working
-        //     }
-        //   },
-        //   'PickupDelay' -> 6 //Prevents player from picking up boxes before they fall down
-        // });
+      spawn('item', pos(player()), {
+        'Item' -> {
+            'id' -> boxID,
+            'Count' -> 1,
+            'tag' -> {
+            'BlockEntityTag' -> {'Items' -> boxContent},
+            'display' -> {'Name' -> global_quote + '{"text":"' + numBoxTitle + '"}' + global_quote}
+            }
+        },
+        'PickupDelay' -> 6 //Prevents player from picking up boxes before they fall down
+      });
     );
-  )
+  );
 );
 
 //Exports item categories to file. Item categories will be taken from shulker boxes
@@ -188,29 +199,29 @@ exportCategories(file, from_pos, to_pos) -> (
     //Get list containing all box names, contents (in single list, still uncategorized) and colors
     //Contains all positions in player selection
     positions = _scanStrip(from_pos, to_pos);
-    //Remove all nbt data except box names
-    before = '.*\\{"text":"';
-    after = '"}' + global_quote + ',Items:.*';
-    boxNames = map(positions, replace(replace(block_data(_), before), after));
+    boxNames = map(positions, _getBoxName(_));
     boxColors = map(positions, _getBoxColor(_));
     boxItems = map(positions, _getBoxAtPos(_));
 
     //Separate box contents into categories based on box color,
     //omit names and colors of boxes that aren't the first box of their category
     cNames = [];
-    cItems = [];
     cColors = [];
+    cItems = [];
     prevColor = null; //Init as null and not as '' to differentiate from uncolored boxes, which get '' as their color
     loop(length(boxItems),
-        if(get(boxItems, _),
-            if(get(boxColors, _) != prevColor,
+        name = get(boxNames, _);
+        color = get(boxColors, _);
+        item = get(boxItems, _);
+        if(item,
+            if(color != prevColor,
                 //Case new category is started (differnt colored box found)
-                prevColor = get(boxColors, _);
-                cNames+=get(boxNames, _);
-                cItems+=get(boxItems, _);
-                cColors+=get(boxColors, _),
+                prevColor = color;
+                cNames+=if(name, name, '');
+                cColors+=if(color, color, '');
+                cItems+=item,
                 //Case same category is continued (box has same color as last box)
-                put(get(cItems, length(cItems) - 1), null, get(boxItems, _), 'extend')
+                put(get(cItems, length(cItems) - 1), null, item, 'extend')
             )
         )
     );
